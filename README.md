@@ -6,10 +6,10 @@ Statusline for [Claude Code](https://claude.com/claude-code): context-window bar
 
 ## Requirements
 
-- [`jq`](https://jqlang.org/) — Claude Code feeds the statusline script a JSON blob on stdin (model, context window, rate limits, etc.), and the script uses `jq` to pull fields out of it. Not optional; the script won't work without it.
-  - macOS: `brew install jq`
-  - Linux: `apt install jq` / `dnf install jq` / `pacman -S jq`
-  - Windows: `winget install jqlang.jq`, `choco install jq`, or `scoop install jq` (the script itself is bash, so it runs via Git Bash or WSL — install jq wherever that bash runs)
+- `python3` — Claude Code feeds the statusline script a JSON blob on stdin (model, context window, rate limits, etc.), and the script uses python's stdlib `json` module to pull fields out of it. Preinstalled on macOS and most Linux distros; no third-party packages needed.
+  - macOS: preinstalled (or `brew install python`)
+  - Linux: usually preinstalled (`apt install python3` / `dnf install python3` / `pacman -S python` if not)
+  - Windows: `winget install Python.Python.3` (the script itself is bash, so it runs via Git Bash or WSL — install python wherever that bash runs)
 
 ## Install
 

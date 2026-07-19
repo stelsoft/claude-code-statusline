@@ -25,13 +25,46 @@ pct_text() {
   printf "${color}%s%%${RESET}" "$pct"
 }
 
-MODEL=$(echo "$input" | jq -r '.model.display_name')
-EFFORT=$(echo "$input" | jq -r '.effort.level // empty')
-DIR=$(echo "$input" | jq -r '.workspace.current_dir')
-SESSION_ID=$(echo "$input" | jq -r '.session_id // "default"')
-PCT=$(echo "$input" | jq -r '.context_window.used_percentage // 0' | cut -d. -f1)
-USED=$(echo "$input" | jq -r '((.context_window.total_input_tokens // 0) + (.context_window.total_output_tokens // 0))')
-MAX=$(echo "$input" | jq -r '.context_window.context_window_size // 200000')
+# Parse the whole payload in one python pass (no jq dependency). Fields come
+# back null-separated in a fixed order; python does the int-truncation and the
+# token sum so the bash below stays unchanged.
+mapfile -t -d '' _F < <(printf '%s' "$input" | python3 -c '
+import sys, json
+d = json.load(sys.stdin)
+def g(o, *ks):
+    for k in ks:
+        o = o.get(k) if isinstance(o, dict) else None
+    return o
+def i(x):
+    try: return str(int(float(x)))
+    except (TypeError, ValueError): return ""
+def raw(x):
+    if x is None: return ""
+    return str(int(x)) if isinstance(x, (int, float)) else str(x)
+cw = lambda *k: g(d, "context_window", *k)
+sys.stdout.write("\0".join([
+    g(d, "model", "display_name") or "",
+    g(d, "effort", "level") or "",
+    g(d, "workspace", "current_dir") or "",
+    g(d, "session_id") or "default",
+    i(cw("used_percentage") or 0),
+    str(int(cw("total_input_tokens") or 0) + int(cw("total_output_tokens") or 0)),
+    str(int(cw("context_window_size") or 200000)),
+    i(g(d, "rate_limits", "five_hour", "used_percentage")),
+    raw(g(d, "rate_limits", "five_hour", "resets_at")),
+    i(g(d, "rate_limits", "seven_day", "used_percentage")),
+]))
+')
+MODEL=${_F[0]}
+EFFORT=${_F[1]}
+DIR=${_F[2]}
+SESSION_ID=${_F[3]:-default}
+PCT=${_F[4]:-0}
+USED=${_F[5]:-0}
+MAX=${_F[6]:-200000}
+DAILY=${_F[7]}
+DAILY_RESET=${_F[8]}
+WEEKLY=${_F[9]}
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
 
@@ -53,10 +86,6 @@ fi
 
 CTX_BAR=$(make_bar "$PCT" 4)
 LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} ${CTX_BAR} $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
-
-DAILY=$(echo "$input" | jq -r '.rate_limits.five_hour.used_percentage // empty' | cut -d. -f1)
-DAILY_RESET=$(echo "$input" | jq -r '.rate_limits.five_hour.resets_at // empty')
-WEEKLY=$(echo "$input" | jq -r '.rate_limits.seven_day.used_percentage // empty' | cut -d. -f1)
 
 # rate_limits (and fable, which is never in the JSON at all) are scraped from
 # `claude -p "/usage"`, cached and refreshed in the background every 5min so the
