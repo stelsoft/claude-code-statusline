@@ -1,12 +1,12 @@
 # claude-code-statusline
 
-Statusline for [Claude Code](https://claude.com/claude-code): context-window bar, 5h/7d/weekly rate-limit bars, staleness age.
+A statusline for [Claude Code](https://claude.com/claude-code).
+
+- Context-window usage bar with token count and staleness age
+- 5h / 7d rate-limit bars with reset countdown
+- Runs on Linux, macOS, and Windows (Git Bash or WSL) — just `bash`
 
 ![screenshot](screenshot.png)
-
-## Requirements
-
-None beyond `bash` itself — no `jq`, no `python`. Claude Code feeds the script a JSON blob on stdin (model, context window, rate limits, etc.) and it parses the fields with pure bash string operations. Runs out of the box on Linux, macOS, and Windows (via Git Bash or WSL), including the stock macOS bash 3.2 and BSD `date`/`stat`.
 
 ## Install
 
@@ -15,7 +15,7 @@ curl -fsSL https://raw.githubusercontent.com/stelsoft/claude-code-statusline/mai
 chmod +x ~/.claude/statusline.sh
 ```
 
-Add to `~/.claude/settings.json`:
+Then add to `~/.claude/settings.json`:
 
 ```json
 {
