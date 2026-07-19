@@ -3,6 +3,13 @@ input=$(cat)
 
 RESET="\033[0m"
 
+# Portable command shims — statusline must run install-free on Linux, macOS, and
+# Windows (Git Bash/WSL), so only bash + tools that exist on both GNU and BSD.
+# Probe date once: only GNU date accepts -d.
+if date -d @0 >/dev/null 2>&1; then DATE_GNU=1; else DATE_GNU=0; fi
+epoch_hhmm() { [ "$DATE_GNU" = 1 ] && date -d "@$1" +%H:%M || date -r "$1" +%H:%M; }
+file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+
 # make_bar <pct> <width> -> prints a colored unicode bar for that percentage
 make_bar() {
   local pct=$1 width=$2
@@ -25,46 +32,38 @@ pct_text() {
   printf "${color}%s%%${RESET}" "$pct"
 }
 
-# Parse the whole payload in one python pass (no jq dependency). Fields come
-# back null-separated in a fixed order; python does the int-truncation and the
-# token sum so the bash below stays unchanged.
-mapfile -t -d '' _F < <(printf '%s' "$input" | python3 -c '
-import sys, json
-d = json.load(sys.stdin)
-def g(o, *ks):
-    for k in ks:
-        o = o.get(k) if isinstance(o, dict) else None
-    return o
-def i(x):
-    try: return str(int(float(x)))
-    except (TypeError, ValueError): return ""
-def raw(x):
-    if x is None: return ""
-    return str(int(x)) if isinstance(x, (int, float)) else str(x)
-cw = lambda *k: g(d, "context_window", *k)
-sys.stdout.write("\0".join([
-    g(d, "model", "display_name") or "",
-    g(d, "effort", "level") or "",
-    g(d, "workspace", "current_dir") or "",
-    g(d, "session_id") or "default",
-    i(cw("used_percentage") or 0),
-    str(int(cw("total_input_tokens") or 0) + int(cw("total_output_tokens") or 0)),
-    str(int(cw("context_window_size") or 200000)),
-    i(g(d, "rate_limits", "five_hour", "used_percentage")),
-    raw(g(d, "rate_limits", "five_hour", "resets_at")),
-    i(g(d, "rate_limits", "seven_day", "used_percentage")),
-]))
-')
-MODEL=${_F[0]}
-EFFORT=${_F[1]}
-DIR=${_F[2]}
-SESSION_ID=${_F[3]:-default}
-PCT=${_F[4]:-0}
-USED=${_F[5]:-0}
-MAX=${_F[6]:-200000}
-DAILY=${_F[7]}
-DAILY_RESET=${_F[8]}
-WEEKLY=${_F[9]}
+# Pull fields straight out of the JSON with bash string ops — no jq/python,
+# nothing to install, runs on any bash incl. macOS 3.2. jstr/jnum match a key
+# anywhere; for the repeated "used_percentage"/"resets_at" keys we first chop to
+# just after the parent key so the first match is the right one (order- and
+# whitespace-independent). jnum keeps the integer part, matching the old truncation.
+jstr() { [[ $1 =~ \"$2\"[[:space:]]*:[[:space:]]*\"([^\"]*)\" ]] && printf '%s' "${BASH_REMATCH[1]}"; }
+jnum() { [[ $1 =~ \"$2\"[[:space:]]*:[[:space:]]*(-?[0-9]+) ]] && printf '%s' "${BASH_REMATCH[1]}"; }
+
+MODEL=$(jstr "$input" display_name)
+EFFORT=$(jstr "$input" level)
+DIR=$(jstr "$input" current_dir)
+SESSION_ID=$(jstr "$input" session_id); SESSION_ID=${SESSION_ID:-default}
+
+cw=$input; [[ $input == *context_window* ]] && cw=${input#*context_window}
+PCT=$(jnum "$cw" used_percentage); PCT=${PCT:-0}
+
+in_tok=$(jnum "$input" total_input_tokens)
+out_tok=$(jnum "$input" total_output_tokens)
+USED=$(( ${in_tok:-0} + ${out_tok:-0} ))
+MAX=$(jnum "$input" context_window_size); MAX=${MAX:-200000}
+
+# Guards matter: on a new session (no rate_limits) an unguarded ${input#*five_hour}
+# would fall back to the whole blob and pick up the context-window %. Left empty,
+# these get backfilled from the fable cache below.
+DAILY=""; DAILY_RESET=""
+if [[ $input == *five_hour* ]]; then
+  DAILY=$(jnum "${input#*five_hour}" used_percentage)
+  DAILY_RESET=$(jnum "${input#*five_hour}" resets_at)
+fi
+WEEKLY=""
+[[ $input == *seven_day* ]] && WEEKLY=$(jnum "${input#*seven_day}" used_percentage)
+
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
 
@@ -95,7 +94,7 @@ FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
 FABLE_MAX_AGE=15
 now=$(date +%s)
 mtime=0
-[ -f "$FABLE_CACHE" ] && mtime=$(stat -c %Y "$FABLE_CACHE" 2>/dev/null || echo 0)
+[ -f "$FABLE_CACHE" ] && mtime=$(file_mtime "$FABLE_CACHE" || echo 0)
 if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; then
   (
     touch "$FABLE_CACHE.lock"
@@ -105,13 +104,26 @@ if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; th
 fi
 
 if [ -f "$FABLE_CACHE" ]; then
-  if [ -z "$DAILY" ]; then
-    DAILY=$(grep -oP 'Current session: \K[0-9]+' "$FABLE_CACHE")
-    DAILY_RESET_TXT=$(grep -oP 'Current session:.*resets \K[^(]*' "$FABLE_CACHE" | sed 's/ *$//; s/,//')
-    [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
-  fi
-  [ -z "$WEEKLY" ] && WEEKLY=$(grep -oP 'Current week \(all models\): \K[0-9]+' "$FABLE_CACHE")
-  FABLE=$(grep -oP 'Current week \(Fable\): \K[0-9]+' "$FABLE_CACHE")
+  # Regexes held in vars: a literal ( inside [[ =~ ]] confuses the [[ tokenizer.
+  re_daily='Current session: ([0-9]+)'
+  re_reset='resets ([^(]*)'
+  re_week='Current week \(all models\): ([0-9]+)'
+  re_fable='Current week \(Fable\): ([0-9]+)'
+  while IFS= read -r line; do
+    if [ -z "$DAILY" ] && [[ $line =~ $re_daily ]]; then
+      DAILY=${BASH_REMATCH[1]}
+      if [[ $line =~ $re_reset ]]; then
+        DAILY_RESET_TXT=${BASH_REMATCH[1]%,}
+        DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
+        # ponytail: reset-text to epoch is GNU-only (date -d free text); BSD date
+        # cannot parse it. Only fires for a new session before the JSON rate_limits
+        # arrive, so on macOS the 5h bar shows and the reset text waits for JSON.
+        [ "$DATE_GNU" = 1 ] && [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
+      fi
+    fi
+    [ -z "$WEEKLY" ] && [[ $line =~ $re_week ]] && WEEKLY=${BASH_REMATCH[1]}
+    [[ $line =~ $re_fable ]] && FABLE=${BASH_REMATCH[1]}
+  done < "$FABLE_CACHE"
 fi
 
 LINE2=""
@@ -129,7 +141,7 @@ if [ -n "$DAILY" ]; then
       elif [ "$diff_s" -le 7200 ]; then reset_color="\033[33m"
       else reset_color="\033[32m"
       fi
-      reset_hhmm=$(date -d "@$DAILY_RESET" +%H:%M)
+      reset_hhmm=$(epoch_hhmm "$DAILY_RESET")
       if [ "$dh" -gt 0 ]; then
         reset_txt="resets in ${dh}h$(printf '%02d' "$dm")m (${reset_hhmm})"
       else
@@ -144,30 +156,3 @@ fi
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
-
-# When running inside a herdr pane, mirror the usage numbers onto that pane's
-# sidebar row as a $claude_usage token. Fire-and-forget and deduped by last
-# reported value so it never blocks the statusline or spams the socket.
-# Flip to 1 to re-enable; the herdr sidebar row config is already wired up.
-HERDR_SIDEBAR_USAGE=0
-if [ "$HERDR_SIDEBAR_USAGE" = "1" ] && [ "$HERDR_ENV" = "1" ] && [ -n "$HERDR_PANE_ID" ]; then
-  HERDR_BIN="${HERDR_BIN_PATH:-$(command -v herdr 2>/dev/null)}"
-  HERDR_BIN="${HERDR_BIN:-$HOME/Programs/herdr-linux-x86_64}"
-  if [ -x "$HERDR_BIN" ] || command -v "$HERDR_BIN" >/dev/null 2>&1; then
-    HERDR_VAL=""
-    [ -n "$DAILY" ] && HERDR_VAL="5h${DAILY}"
-    [ -n "$WEEKLY" ] && HERDR_VAL="${HERDR_VAL}${HERDR_VAL:+ }7d${WEEKLY}"
-    [ -n "$FABLE" ] && HERDR_VAL="${HERDR_VAL}${HERDR_VAL:+ }fb${FABLE}"
-    HERDR_CACHE="$HOME/.claude/.statusline_herdr_last_${HERDR_PANE_ID//[:\/]/_}"
-    LAST_VAL=$(cat "$HERDR_CACHE" 2>/dev/null)
-    if [ "$HERDR_VAL" != "$LAST_VAL" ]; then
-      (
-        "$HERDR_BIN" pane report-metadata "$HERDR_PANE_ID" \
-          --source claude-statusline \
-          --token "claude_usage=$HERDR_VAL" \
-          --ttl-ms 600000 >/dev/null 2>&1 \
-        && printf '%s' "$HERDR_VAL" > "$HERDR_CACHE"
-      ) & disown 2>/dev/null
-    fi
-  fi
-fi
