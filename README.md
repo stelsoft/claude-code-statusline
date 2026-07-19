@@ -4,7 +4,9 @@ Statusline for [Claude Code](https://claude.com/claude-code): context-window bar
 
 ![screenshot](screenshot.png)
 
-Requires [`jq`](https://jqlang.org/) — Claude Code feeds the statusline script a JSON blob on stdin (model, context window, rate limits, etc.), and the script uses `jq` to pull fields out of it. Install via your package manager, e.g. `apt install jq` / `brew install jq`.
+## Requirements
+
+- [`jq`](https://jqlang.org/) — Claude Code feeds the statusline script a JSON blob on stdin (model, context window, rate limits, etc.), and the script uses `jq` to pull fields out of it. Install via your package manager, e.g. `apt install jq` / `brew install jq`.
 
 ## Install
 
