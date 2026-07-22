@@ -87,7 +87,7 @@ CTX_BAR=$(make_bar "$PCT" 4)
 LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} ${CTX_BAR} $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
 
 # rate_limits (and fable, which is never in the JSON at all) are scraped from
-# `claude -p "/usage"`, cached and refreshed in the background every 5min so the
+# `claude -p "/usage"`, cached and refreshed in the background every 15s so the
 # statusline never blocks on it. This also backfills 5h/7d for brand-new sessions,
 # whose rate_limits JSON is empty until the harness gets a first API response.
 FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
