@@ -45,24 +45,22 @@ EFFORT=$(jstr "$input" level)
 DIR=$(jstr "$input" current_dir)
 SESSION_ID=$(jstr "$input" session_id); SESSION_ID=${SESSION_ID:-default}
 
-cw=$input; [[ $input == *context_window* ]] && cw=${input#*context_window}
-PCT=$(jnum "$cw" used_percentage); PCT=${PCT:-0}
+# Chop to the object's own braces before matching: "used_percentage" also lives
+# under rate_limits, so an unbounded search would show the 5h number as context.
+obj() { local s=${1#*$2}; [[ $1 == *$2* ]] && printf '%s' "${s%%\}*}"; }
+
+PCT=$(jnum "$(obj "$input" context_window)" used_percentage); PCT=${PCT:-0}
 
 in_tok=$(jnum "$input" total_input_tokens)
 out_tok=$(jnum "$input" total_output_tokens)
 USED=$(( ${in_tok:-0} + ${out_tok:-0} ))
 MAX=$(jnum "$input" context_window_size); MAX=${MAX:-200000}
 
-# Guards matter: on a new session (no rate_limits) an unguarded ${input#*five_hour}
-# would fall back to the whole blob and pick up the context-window %. Left empty,
-# these get backfilled from the fable cache below.
-DAILY=""; DAILY_RESET=""
-if [[ $input == *five_hour* ]]; then
-  DAILY=$(jnum "${input#*five_hour}" used_percentage)
-  DAILY_RESET=$(jnum "${input#*five_hour}" resets_at)
-fi
-WEEKLY=""
-[[ $input == *seven_day* ]] && WEEKLY=$(jnum "${input#*seven_day}" used_percentage)
+# Empty on a new session (no rate_limits yet); backfilled from the fable cache below.
+five=$(obj "$input" five_hour)
+DAILY=$(jnum "$five" used_percentage)
+DAILY_RESET=$(jnum "$five" resets_at)
+WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
@@ -163,3 +161,4 @@ fi
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
+exit 0
