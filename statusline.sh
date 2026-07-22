@@ -95,6 +95,13 @@ FABLE_MAX_AGE=15
 now=$(date +%s)
 mtime=0
 [ -f "$FABLE_CACHE" ] && mtime=$(file_mtime "$FABLE_CACHE" || echo 0)
+# The background refresh can be killed before its `rm -f` runs (session exit,
+# SIGKILL), leaving a lock that would block every future refresh forever and
+# freeze the numbers. Anything older than a minute is a corpse, not a holder.
+if [ -f "$FABLE_CACHE.lock" ]; then
+  lock_mtime=$(file_mtime "$FABLE_CACHE.lock" || echo 0)
+  [ $((now - ${lock_mtime:-0})) -gt 60 ] && rm -f "$FABLE_CACHE.lock" "$FABLE_CACHE.tmp"
+fi
 if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; then
   (
     touch "$FABLE_CACHE.lock"
