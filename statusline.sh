@@ -56,7 +56,11 @@ out_tok=$(jnum "$input" total_output_tokens)
 USED=$(( ${in_tok:-0} + ${out_tok:-0} ))
 MAX=$(jnum "$input" context_window_size); MAX=${MAX:-200000}
 
-# Empty on a new session (no rate_limits yet); backfilled from the fable cache below.
+# rate_limits is this session's snapshot from its last API response, so the
+# percentages freeze while the session sits idle and never see what other
+# sessions burn (three concurrent sessions report 16/19/21 for the same window).
+# The /usage cache below is account-wide and 15s fresh, so it overrides these;
+# only resets_at is kept, being an exact epoch no date(1) has to parse.
 five=$(obj "$input" five_hour)
 DAILY=$(jnum "$five" used_percentage)
 DAILY_RESET=$(jnum "$five" resets_at)
@@ -86,8 +90,8 @@ LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} ${CTX_BAR} $(pct_text "$PCT") (${U
 
 # rate_limits (and fable, which is never in the JSON at all) are scraped from
 # `claude -p "/usage"`, cached and refreshed in the background every 15s so the
-# statusline never blocks on it. This also backfills 5h/7d for brand-new sessions,
-# whose rate_limits JSON is empty until the harness gets a first API response.
+# statusline never blocks on it. It is also the source of truth for 5h/7d: the
+# JSON's per-session snapshot goes stale (see above) and is empty on a new session.
 FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
 FABLE_MAX_AGE=15
 now=$(date +%s)
@@ -115,9 +119,9 @@ if [ -f "$FABLE_CACHE" ]; then
   re_week='Current week \(all models\): ([0-9]+)'
   re_fable='Current week \(Fable\): ([0-9]+)'
   while IFS= read -r line; do
-    if [ -z "$DAILY" ] && [[ $line =~ $re_daily ]]; then
+    if [[ $line =~ $re_daily ]]; then
       DAILY=${BASH_REMATCH[1]}
-      if [[ $line =~ $re_reset ]]; then
+      if [ -z "$DAILY_RESET" ] && [[ $line =~ $re_reset ]]; then
         DAILY_RESET_TXT=${BASH_REMATCH[1]%,}
         DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
         # ponytail: reset-text to epoch is GNU-only (date -d free text); BSD date
@@ -126,7 +130,7 @@ if [ -f "$FABLE_CACHE" ]; then
         [ "$DATE_GNU" = 1 ] && [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
       fi
     fi
-    [ -z "$WEEKLY" ] && [[ $line =~ $re_week ]] && WEEKLY=${BASH_REMATCH[1]}
+    [[ $line =~ $re_week ]] && WEEKLY=${BASH_REMATCH[1]}
     [[ $line =~ $re_fable ]] && FABLE=${BASH_REMATCH[1]}
   done < "$FABLE_CACHE"
 fi
