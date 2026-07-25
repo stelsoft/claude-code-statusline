@@ -112,7 +112,10 @@ if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; th
     touch "$FABLE_CACHE.lock"
     claude -p "/usage" 2>/dev/null > "$FABLE_CACHE.tmp" && mv "$FABLE_CACHE.tmp" "$FABLE_CACHE"
     rm -f "$FABLE_CACHE.lock"
-  ) & disown 2>/dev/null
+  # stdout closed too: Claude Code reads the statusline until EOF, and the child
+  # would otherwise hold that fd open for the whole `claude -p` run, stalling the
+  # frame. Nothing in here prints, so nothing is lost.
+  ) >/dev/null 2>&1 & disown 2>/dev/null
 fi
 
 if [ -f "$FABLE_CACHE" ]; then
