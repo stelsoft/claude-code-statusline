@@ -14,6 +14,15 @@ A statusline for [Claude Code](https://claude.com/claude-code).
 
 ![screenshot](screenshot.png)
 
+## Requirements
+
+Nothing to install — `bash` plus tools that already ship with the OS. UTF-8
+terminal for the `▓▒░` bars.
+
+- **Windows** — Git Bash or WSL. Not `cmd.exe` or PowerShell.
+- **macOS** — reset countdown stays blank for a new session's first frames; BSD
+  `date` can't parse the text form.
+
 ## Install
 
 ```sh
