@@ -78,11 +78,27 @@ WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
 
-# Average output speed: tokens generated over the time the API actually spent
-# generating them. Both numbers come from the payload; blank on a session's first
-# frame, when no API call has happened yet and the duration is 0.
+# Session-average output speed: every assistant message's output tokens over the
+# API time that produced them. The payload's total_output_tokens is NOT a session
+# total — it is just the last response (it feeds the context bar above), so
+# dividing it by cumulative API time gave a number that jumped around and hit 0
+# whenever the last reply was short. The transcript is the only cumulative source.
+# It writes one line per content block, so the same message id repeats and is
+# counted once; the second "output_tokens" inside usage.iterations never wins
+# because only the first match on a line is read.
 api_ms=$(jnum "$input" total_api_duration_ms)
-[ "${api_ms:-0}" -gt 0 ] && TPS=$((${out_tok:-0} * 1000 / api_ms))
+transcript=$(jstr "$input" transcript_path)
+transcript=${transcript//\\\\/\/}   # Git Bash: JSON carries C:\\Users\\... escaped
+if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
+  out_total=$(awk '/"output_tokens":/{
+      if (!match($0, /"id":"msg_[^"]*"/)) next
+      id = substr($0, RSTART + 6, RLENGTH - 7)
+      if (id in seen) next
+      seen[id] = 1
+      if (match($0, /"output_tokens":[0-9]+/)) sum += substr($0, RSTART + 16, RLENGTH - 16)
+    } END { print sum + 0 }' "$transcript")
+  [ "${out_total:-0}" -gt 0 ] && TPS=$((out_total * 1000 / api_ms))
+fi
 
 # fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
 # cached and refreshed in the background every 15s so the statusline never blocks.
