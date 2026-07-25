@@ -78,6 +78,12 @@ WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
 
+# Average output speed: tokens generated over the time the API actually spent
+# generating them. Both numbers come from the payload; blank on a session's first
+# frame, when no API call has happened yet and the duration is 0.
+api_ms=$(jnum "$input" total_api_duration_ms)
+[ "${api_ms:-0}" -gt 0 ] && TPS=$((${out_tok:-0} * 1000 / api_ms))
+
 # fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
 # cached and refreshed in the background every 15s so the statusline never blocks.
 # ponytail: that source reads a local snapshot that can lag by hours (see above),
@@ -188,7 +194,7 @@ if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
 else AGE_TXT="$((age_s / 60))m ago"
 fi
 
-LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
+LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
