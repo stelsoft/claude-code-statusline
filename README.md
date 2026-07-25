@@ -4,7 +4,9 @@ A statusline for [Claude Code](https://claude.com/claude-code).
 
 - Context-window bar with token count
 - 5h / 7d rate-limit bars with reset countdown, straight from Claude Code's own
-  rate-limit data — same numbers `/usage` shows
+  rate-limit data — same numbers `/usage` shows. The countdown shows on the first
+  frame of a new session, before that data arrives, by reusing the last known
+  reset time
 - Fable weekly bar, scraped from `/usage` in the background (nothing else carries
   it); hidden when that snapshot reports 0
 - `updated Xs ago` — when the 5h figure last actually moved

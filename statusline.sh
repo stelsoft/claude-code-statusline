@@ -85,6 +85,19 @@ MAX_K=$((MAX / 1000))
 FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
 FABLE_MAX_AGE=15
 now=$(date +%s)
+
+# One age for the whole statusline plus the last known 5h reset. Deliberately not
+# per-session — the 5h window is account-wide, so any session seeing a new value
+# refreshes it for all of them.
+USAGE_TS="$HOME/.claude/.statusline_usage_ts"
+last_pct="" last_ts="$now" last_reset=""
+[ -f "$USAGE_TS" ] && read -r last_pct last_ts last_reset < "$USAGE_TS"
+# A brand-new session has no rate_limits in the JSON yet, and the background
+# scrape below cannot land before this first frame draws — so the reset time was
+# blank exactly when it is looked at most. The cached epoch stays valid until the
+# window rolls, so reuse it; JSON always wins when it does arrive.
+[ -z "$DAILY_RESET" ] && [ "${last_reset:-0}" -gt "$now" ] && DAILY_RESET=$last_reset
+
 mtime=0
 [ -f "$FABLE_CACHE" ] && mtime=$(file_mtime "$FABLE_CACHE" || echo 0)
 # The background refresh can be killed before its `rm -f` runs (session exit,
@@ -114,7 +127,7 @@ if [ -f "$FABLE_CACHE" ]; then
     if [[ $line =~ $re_daily ]]; then
       DAILY=${DAILY:-${BASH_REMATCH[1]}}
       if [ -z "$DAILY_RESET" ] && [[ $line =~ $re_reset ]]; then
-        DAILY_RESET_TXT=${BASH_REMATCH[1]%,}
+        DAILY_RESET_TXT=${BASH_REMATCH[1]//,/}   # "Jul 25, 3pm" — the comma alone makes date -d reject it
         DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
         # ponytail: reset-text to epoch is GNU-only (date -d free text); BSD date
         # cannot parse it. Only fires for a new session before the JSON rate_limits
@@ -161,15 +174,11 @@ fi
 [ -n "$FABLE" ] && [ "$FABLE" -gt 0 ] &&
   LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
 
-# One age for the whole statusline: when the 5h number last actually moved. The
-# file is deliberately not per-session — the 5h window is account-wide, so any
-# session seeing a new value refreshes it for all of them.
-USAGE_TS="$HOME/.claude/.statusline_usage_ts"
-last_pct="" last_ts="$now"
-[ -f "$USAGE_TS" ] && read -r last_pct last_ts < "$USAGE_TS"
-if [ "${DAILY:-}" != "$last_pct" ]; then
-  last_ts="$now"
-  printf '%s %s\n' "${DAILY:-}" "$now" > "$USAGE_TS"
+# Only the percentage moving means new usage, so only that resets the age. The
+# reset epoch rides along in the same file and is written whenever it is learned.
+if [ "${DAILY:-}" != "$last_pct" ]; then last_ts="$now"; fi
+if [ "${DAILY:-}" != "$last_pct" ] || [ "${DAILY_RESET:-}" != "$last_reset" ]; then
+  printf '%s %s %s\n' "${DAILY:-}" "$last_ts" "${DAILY_RESET:-$last_reset}" > "$USAGE_TS"
 fi
 age_s=$((now - last_ts))
 if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
