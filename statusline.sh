@@ -13,11 +13,19 @@ file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
 # make_bar <pct> <width> -> prints a colored unicode bar for that percentage
 make_bar() {
   local pct=$1 width=$2
-  local filled=$((pct * width / 100))
-  local empty=$((width - filled))
+  # Half-blocks double the resolution of a 4-cell bar (8 steps, not 4), and the
+  # ceil means any nonzero usage shows something — at whole cells 1-24% all
+  # rendered as an empty bar, which read as a broken statusline.
+  local halves=$(((pct * width * 2 + 99) / 100))
+  # A full bar means 100%, nothing less: without this, ceil made 88% look maxed.
+  [ "$halves" -ge $((width * 2)) ] && [ "$pct" -lt 100 ] && halves=$((width * 2 - 1))
+  [ "$halves" -gt $((width * 2)) ] && halves=$((width * 2))
+  local full=$((halves / 2)) half=$((halves % 2))
+  local empty=$((width - full - half))
   local color="\033[90m"
   local bar="" fill pad
-  [ "$filled" -gt 0 ] && printf -v fill "%${filled}s" && bar="${fill// /▓}"
+  [ "$full" -gt 0 ] && printf -v fill "%${full}s" && bar="${fill// /▓}"
+  [ "$half" -gt 0 ] && bar="${bar}▒"
   [ "$empty" -gt 0 ] && printf -v pad "%${empty}s" && bar="${bar}${pad// /░}"
   printf "${color}%s${RESET}" "$bar"
 }
@@ -43,24 +51,25 @@ jnum() { [[ $1 =~ \"$2\"[[:space:]]*:[[:space:]]*(-?[0-9]+) ]] && printf '%s' "$
 MODEL=$(jstr "$input" display_name)
 EFFORT=$(jstr "$input" level)
 DIR=$(jstr "$input" current_dir)
-SESSION_ID=$(jstr "$input" session_id); SESSION_ID=${SESSION_ID:-default}
 
 # Chop to the object's own braces before matching: "used_percentage" also lives
 # under rate_limits, so an unbounded search would show the 5h number as context.
 obj() { local s=${1#*$2}; [[ $1 == *$2* ]] && printf '%s' "${s%%\}*}"; }
-
-PCT=$(jnum "$(obj "$input" context_window)" used_percentage); PCT=${PCT:-0}
 
 in_tok=$(jnum "$input" total_input_tokens)
 out_tok=$(jnum "$input" total_output_tokens)
 USED=$(( ${in_tok:-0} + ${out_tok:-0} ))
 MAX=$(jnum "$input" context_window_size); MAX=${MAX:-200000}
 
-# rate_limits is this session's snapshot from its last API response, so the
-# percentages freeze while the session sits idle and never see what other
-# sessions burn (three concurrent sessions report 16/19/21 for the same window).
-# The /usage cache below is account-wide and 15s fresh, so it overrides these;
-# only resets_at is kept, being an exact epoch no date(1) has to parse.
+# Computed, not parsed: context_window.used_percentage sits *after* the nested
+# current_usage object, so obj()'s cut-at-first-brace lands before it and yielded
+# 0%. Rounding (not truncating) reproduces the JSON's own figure exactly.
+PCT=$(((USED * 100 + MAX / 2) / MAX))
+
+# Source of truth for 5h/7d. These come from the last API response's rate-limit
+# headers and match what interactive /usage shows to the point (28.000000000000004
+# vs "28% used"). The `claude -p "/usage"` scrape below does NOT: a fresh headless
+# session reports 2%/0% for the same window, so it must never override these.
 five=$(obj "$input" five_hour)
 DAILY=$(jnum "$five" used_percentage)
 DAILY_RESET=$(jnum "$five" resets_at)
@@ -69,29 +78,10 @@ WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 USED_K=$((USED / 1000))
 MAX_K=$((MAX / 1000))
 
-# Context tokens only change when a message actually completes, but this script
-# re-runs on every refreshInterval tick — so track when USED last changed to
-# show how stale the number is.
-UPDATED_CACHE="$HOME/.claude/.statusline_updated_${SESSION_ID}"
-now_ts=$(date +%s)
-last_used="" last_ts="$now_ts"
-[ -f "$UPDATED_CACHE" ] && read -r last_used last_ts < "$UPDATED_CACHE"
-if [ "$USED" != "$last_used" ]; then
-  last_ts="$now_ts"
-  printf '%s %s\n' "$USED" "$now_ts" > "$UPDATED_CACHE"
-fi
-age_s=$((now_ts - last_ts))
-if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
-else AGE_TXT="$((age_s / 60))m ago"
-fi
-
-CTX_BAR=$(make_bar "$PCT" 4)
-LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} ${CTX_BAR} $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
-
-# rate_limits (and fable, which is never in the JSON at all) are scraped from
-# `claude -p "/usage"`, cached and refreshed in the background every 15s so the
-# statusline never blocks on it. It is also the source of truth for 5h/7d: the
-# JSON's per-session snapshot goes stale (see above) and is empty on a new session.
+# fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
+# cached and refreshed in the background every 15s so the statusline never blocks.
+# ponytail: that source reads a local snapshot that can lag by hours (see above),
+# so fable trails reality. Drop this block if the JSON ever grows a per-model bucket.
 FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
 FABLE_MAX_AGE=15
 now=$(date +%s)
@@ -119,8 +109,10 @@ if [ -f "$FABLE_CACHE" ]; then
   re_week='Current week \(all models\): ([0-9]+)'
   re_fable='Current week \(Fable\): ([0-9]+)'
   while IFS= read -r line; do
+    # Only fill what the JSON left empty (brand-new session, no API response yet).
+    # Never overwrite a JSON value — the scrape is the lower-quality source.
     if [[ $line =~ $re_daily ]]; then
-      DAILY=${BASH_REMATCH[1]}
+      DAILY=${DAILY:-${BASH_REMATCH[1]}}
       if [ -z "$DAILY_RESET" ] && [[ $line =~ $re_reset ]]; then
         DAILY_RESET_TXT=${BASH_REMATCH[1]%,}
         DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
@@ -130,7 +122,7 @@ if [ -f "$FABLE_CACHE" ]; then
         [ "$DATE_GNU" = 1 ] && [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
       fi
     fi
-    [[ $line =~ $re_week ]] && WEEKLY=${BASH_REMATCH[1]}
+    [[ $line =~ $re_week ]] && WEEKLY=${WEEKLY:-${BASH_REMATCH[1]}}
     [[ $line =~ $re_fable ]] && FABLE=${BASH_REMATCH[1]}
   done < "$FABLE_CACHE"
 fi
@@ -161,7 +153,30 @@ if [ -n "$DAILY" ]; then
   fi
 fi
 [ -n "$WEEKLY" ] && LINE2="${LINE2}${LINE2:+ | }7d $(make_bar "$WEEKLY" 4) $(pct_text "$WEEKLY")"
-[ -n "$FABLE" ] && LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
+# Hidden at 0 rather than shown as 0%. The scrape is the only source for fable
+# (no per-model bucket in the JSON, no local file has percentages), and headless
+# /usage currently returns ~0 for every percentage while printing correct reset
+# times — so 0 here means "source broken", not "no fable usage". The bar comes
+# back on its own if that source starts reporting again.
+[ -n "$FABLE" ] && [ "$FABLE" -gt 0 ] &&
+  LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
+
+# One age for the whole statusline: when the 5h number last actually moved. The
+# file is deliberately not per-session — the 5h window is account-wide, so any
+# session seeing a new value refreshes it for all of them.
+USAGE_TS="$HOME/.claude/.statusline_usage_ts"
+last_pct="" last_ts="$now"
+[ -f "$USAGE_TS" ] && read -r last_pct last_ts < "$USAGE_TS"
+if [ "${DAILY:-}" != "$last_pct" ]; then
+  last_ts="$now"
+  printf '%s %s\n' "${DAILY:-}" "$now" > "$USAGE_TS"
+fi
+age_s=$((now - last_ts))
+if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
+else AGE_TXT="$((age_s / 60))m ago"
+fi
+
+LINE1="[$MODEL${EFFORT:+ $EFFORT}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
