@@ -90,14 +90,35 @@ api_ms=$(jnum "$input" total_api_duration_ms)
 transcript=$(jstr "$input" transcript_path)
 transcript=${transcript//\\\\/\/}   # Git Bash: JSON carries C:\\Users\\... escaped
 if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
-  out_total=$(awk '/"output_tokens":/{
+  # clears counts only real /clear invocations: the marker is the whole user
+  # message, so anchoring at "content":" keeps a chat *about* /clear from counting.
+  read -r out_total clears <<< "$(awk '
+    index($0, "\"content\":\"<command-name>/clear<") { clears++ }
+    /"output_tokens":/{
       if (!match($0, /"id":"msg_[^"]*"/)) next
       id = substr($0, RSTART + 6, RLENGTH - 7)
       if (id in seen) next
       seen[id] = 1
       if (match($0, /"output_tokens":[0-9]+/)) sum += substr($0, RSTART + 16, RLENGTH - 16)
-    } END { print sum + 0 }' "$transcript")
-  [ "${out_total:-0}" -gt 0 ] && TPS=$((out_total * 1000 / api_ms))
+    } END { print sum + 0, clears + 0 }' "$transcript")"
+  # /clear and a model switch each start a conversation the running average no
+  # longer describes, but every counter here is a session total that survives
+  # both — so the totals at the reset are cached and subtracted from then on.
+  # Keyed by session id: concurrent sessions would otherwise reset each other.
+  TPS_STATE="$HOME/.claude/.statusline_tps_$(jstr "$input" session_id)"
+  mark="$clears $MODEL"   # mark last: read gives it the rest of the line, spaces and all
+  base_out=0 base_ms=0 base_mark=""
+  [ -f "$TPS_STATE" ] && read -r base_out base_ms base_mark < "$TPS_STATE"
+  if [ "$mark" != "$base_mark" ] || [ "$api_ms" -lt "${base_ms:-0}" ]; then
+    # Empty base_mark is the first frame of a session, not a reset — keep the
+    # whole history there, or every session would start by throwing itself away.
+    [ -n "$base_mark" ] && { base_out=$out_total; base_ms=$api_ms; }
+    printf '%s %s %s\n' "$base_out" "$base_ms" "$mark" > "$TPS_STATE"
+    # One file per session, so sweep the dead ones — on this rare write, not per frame.
+    find "$HOME/.claude" -maxdepth 1 -name '.statusline_tps_*' -mtime +7 -delete 2>/dev/null
+  fi
+  d_ms=$((api_ms - base_ms)) d_out=$((out_total - base_out))
+  [ "$d_ms" -gt 0 ] && [ "$d_out" -gt 0 ] && TPS=$((d_out * 1000 / d_ms))
 fi
 
 # fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
