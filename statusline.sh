@@ -224,7 +224,14 @@ fi
 # reset epoch rides along in the same file and is written whenever it is learned.
 if [ "${DAILY:-}" != "$last_pct" ]; then last_ts="$now"; fi
 if [ "${DAILY:-}" != "$last_pct" ] || [ "${DAILY_RESET:-}" != "$last_reset" ]; then
-  printf '%s %s %s\n' "${DAILY:-}" "$last_ts" "${DAILY_RESET:-$last_reset}" > "$USAGE_TS"
+  # tmp+mv: limit-watch reads this file between renders; a direct > could hand it
+  # a half-written line.
+  printf '%s %s %s\n' "${DAILY:-}" "$last_ts" "${DAILY_RESET:-$last_reset}" > "$USAGE_TS.tmp" &&
+    mv "$USAGE_TS.tmp" "$USAGE_TS"
+elif [ -n "${DAILY:-}" ]; then
+  # Value unchanged but confirmed this render — bump mtime so limit-watch reads
+  # "statusline alive", not "reading stale". Content (and the age display) untouched.
+  touch -c "$USAGE_TS"
 fi
 age_s=$((now - last_ts))
 if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
