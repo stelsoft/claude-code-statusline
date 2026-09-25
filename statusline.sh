@@ -9,6 +9,7 @@ RESET="\033[0m"
 if date -d @0 >/dev/null 2>&1; then DATE_GNU=1; else DATE_GNU=0; fi
 epoch_hhmm() { [ "$DATE_GNU" = 1 ] && date -d "@$1" +%H:%M || date -r "$1" +%H:%M; }
 file_mtime() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null; }
+iso_epoch() { [ "$DATE_GNU" = 1 ] && date -d "$1" +%s || date -j -u -f %Y-%m-%dT%H:%M:%S "${1%.*}" +%s; }
 
 # make_bar <pct> <width> -> prints a colored unicode bar for that percentage
 make_bar() {
@@ -76,7 +77,6 @@ DAILY_RESET=$(jnum "$five" resets_at)
 WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 
 USED_K=$((USED / 1000))
-MAX_K=$((MAX / 1000))
 
 # Session-average output speed: every assistant message's output tokens over the
 # API time that produced them. The payload's total_output_tokens is NOT a session
@@ -94,8 +94,16 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   # message, so anchoring at "content":" keeps a chat *about* /clear from counting.
   # ttl: every response names the cache bucket it wrote to; the last nonzero one
   # is the TTL in force (5m after usage overage, 1h otherwise).
-  read -r out_total clears ttl <<< "$(awk '
-    index($0, "\"content\":\"<command-name>/clear<") { clears++ }
+  # sent: the TTL refreshes when a request reaches the API, and every request
+  # follows a user-type line (prompt or tool result) — so its timestamp, not the
+  # reply's, is when the clock started. The file's mtime would be off by the
+  # last response's whole duration. A compact or /clear replaces the whole
+  # prefix, so nothing cached is worth keeping warm until the next request:
+  # sent is dropped there, and the compact summary line is not a request.
+  read -r out_total clears ttl sent <<< "$(awk '
+    index($0, "\"content\":\"<command-name>/clear<") { clears++; sent = "" }
+    /"subtype":"compact_boundary"/ { sent = "" }
+    /"type":"user"/ && !/"isCompactSummary":true/ && match($0, /"timestamp":"[^"]*"/) { sent = substr($0, RSTART + 13, RLENGTH - 14) }
     /ephemeral_1h_input_tokens":[1-9]/ { ttl = 3600 }
     /ephemeral_5m_input_tokens":[1-9]/ { ttl = 300 }
     /"output_tokens":/{
@@ -104,7 +112,7 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
       if (id in seen) next
       seen[id] = 1
       if (match($0, /"output_tokens":[0-9]+/)) sum += substr($0, RSTART + 16, RLENGTH - 16)
-    } END { print sum + 0, clears + 0, ttl + 0 }' "$transcript")"
+    } END { print sum + 0, clears + 0, ttl + 0, sent }' "$transcript")"
   # /clear and a model switch each start a conversation the running average no
   # longer describes, but every counter here is a session total that survives
   # both — so the totals at the reset are cached and subtracted from then on.
@@ -123,12 +131,12 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   fi
   d_ms=$((api_ms - base_ms)) d_out=$((out_total - base_out))
   [ "$d_ms" -gt 0 ] && [ "$d_out" -gt 0 ] && TPS=$((d_out * 1000 / d_ms))
-  # Prompt-cache warmth: each request re-warms the cache for ttl, and the
-  # transcript's last write is that request (or its reply, seconds later).
-  # Sending anything before it hits 0 keeps the cached prefix; after, it is
-  # rebuilt at full price. Shown as m:ss because at 5m the seconds matter.
-  if [ "${ttl:-0}" -gt 0 ]; then
-    left=$((ttl - ($(date +%s) - $(file_mtime "$transcript"))))
+  # Prompt-cache warmth: each request re-warms the cache for ttl. Sending
+  # anything before it hits 0 keeps the cached prefix; after, it is rebuilt at
+  # full price. Shown as m:ss because at 5m the seconds matter.
+  [ -n "$sent" ] && sent_s=$(iso_epoch "$sent" 2>/dev/null) || sent_s=""
+  if [ "${ttl:-0}" -gt 0 ] && [ -n "$sent_s" ]; then
+    left=$((ttl - ($(date +%s) - sent_s)))
     if [ "$left" -le 0 ]; then CACHE="\033[31mcache cold${RESET}"
     else
       if [ "$left" -le $((ttl / 5)) ]; then cache_color="\033[31m"
@@ -257,7 +265,7 @@ if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
 else AGE_TXT="$((age_s / 60))m ago"
 fi
 
-LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
+LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") ${USED_K}k | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
