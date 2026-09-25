@@ -77,7 +77,7 @@ DAILY_RESET=$(jnum "$five" resets_at)
 WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 
 USED_K=$((USED / 1000))
-if [ "$USED" -ge 180000 ]; then CTX_COLOR="\033[31m"; elif [ "$USED" -ge 150000 ]; then CTX_COLOR="\033[33m"; else CTX_COLOR="\033[0m"; fi
+if [ "$PCT" -ge 80 ]; then CTX_COLOR="\033[31m"; elif [ "$USED" -ge 150000 ]; then CTX_COLOR="\033[33m"; else CTX_COLOR="\033[0m"; fi
 
 # Session-average output speed: every assistant message's output tokens over the
 # API time that produced them. The payload's total_output_tokens is NOT a session
