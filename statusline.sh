@@ -76,7 +76,8 @@ DAILY=$(jnum "$five" used_percentage)
 DAILY_RESET=$(jnum "$five" resets_at)
 WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 
-USED_K=$((USED / 1000)); [ "$USED" -ge 150000 ] && USED_K="\033[33m${USED_K}\033[0m"
+USED_K=$((USED / 1000))
+if [ "$USED" -ge 180000 ]; then CTX_COLOR="\033[31m"; elif [ "$USED" -ge 150000 ]; then CTX_COLOR="\033[33m"; else CTX_COLOR="\033[0m"; fi
 
 # Session-average output speed: every assistant message's output tokens over the
 # API time that produced them. The payload's total_output_tokens is NOT a session
@@ -266,7 +267,7 @@ if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
 else AGE_TXT="$((age_s / 60))m ago"
 fi
 
-LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") ${USED_K}k | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
+LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) ${CTX_COLOR}${PCT}% ${USED_K}k${RESET} | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
