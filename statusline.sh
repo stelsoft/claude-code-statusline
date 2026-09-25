@@ -103,7 +103,7 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   read -r out_total clears ttl sent <<< "$(awk '
     index($0, "\"content\":\"<command-name>/clear<") { clears++; sent = "" }
     /"subtype":"compact_boundary"/ { sent = "" }
-    /"type":"user"/ && !/"isCompactSummary":true/ && match($0, /"timestamp":"[^"]*"/) { sent = substr($0, RSTART + 13, RLENGTH - 14) }
+    /"type":"user"/ && !/"isCompactSummary":true/ && !/"content":"<(local-command|command-name)/ && match($0, /"timestamp":"[^"]*"/) { sent = substr($0, RSTART + 13, RLENGTH - 14) }
     /ephemeral_1h_input_tokens":[1-9]/ { ttl = 3600 }
     /ephemeral_5m_input_tokens":[1-9]/ { ttl = 300 }
     /"output_tokens":/{
