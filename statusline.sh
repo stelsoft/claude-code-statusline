@@ -76,7 +76,7 @@ DAILY=$(jnum "$five" used_percentage)
 DAILY_RESET=$(jnum "$five" resets_at)
 WEEKLY=$(jnum "$(obj "$input" seven_day)" used_percentage)
 
-USED_K=$((USED / 1000))
+USED_K=$((USED / 1000)); [ "$USED" -ge 150000 ] && USED_K="\033[33m${USED_K}\033[0m"
 
 # Session-average output speed: every assistant message's output tokens over the
 # API time that produced them. The payload's total_output_tokens is NOT a session
