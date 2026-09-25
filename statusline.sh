@@ -135,7 +135,8 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   # anything before it hits 0 keeps the cached prefix; after, it is rebuilt at
   # full price. Shown as m:ss because at 5m the seconds matter.
   [ -n "$sent" ] && sent_s=$(iso_epoch "$sent" 2>/dev/null) || sent_s=""
-  if [ "${ttl:-0}" -gt 0 ] && [ -n "$sent_s" ]; then
+  if [ "${ttl:-0}" -gt 0 ] && [ -z "$sent_s" ]; then CACHE="cache clean"
+  elif [ "${ttl:-0}" -gt 0 ]; then
     left=$((ttl - ($(date +%s) - sent_s)))
     if [ "$left" -le 0 ]; then CACHE="\033[31mcache cold${RESET}"
     else
