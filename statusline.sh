@@ -135,7 +135,7 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
       elif [ "$left" -le $((ttl / 2)) ]; then cache_color="\033[33m"
       else cache_color="\033[32m"
       fi
-      CACHE="cache $((ttl / 60))m ${cache_color}$((left / 60)):$(printf '%02d' $((left % 60)))${RESET}"
+      CACHE="cache ${cache_color}$((left / 60)):$(printf '%02d' $((left % 60)))${RESET}"
     fi
   fi
 fi
