@@ -92,15 +92,19 @@ transcript=${transcript//\\\\/\/}   # Git Bash: JSON carries C:\\Users\\... esca
 if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   # clears counts only real /clear invocations: the marker is the whole user
   # message, so anchoring at "content":" keeps a chat *about* /clear from counting.
-  read -r out_total clears <<< "$(awk '
+  # ttl: every response names the cache bucket it wrote to; the last nonzero one
+  # is the TTL in force (5m after usage overage, 1h otherwise).
+  read -r out_total clears ttl <<< "$(awk '
     index($0, "\"content\":\"<command-name>/clear<") { clears++ }
+    /ephemeral_1h_input_tokens":[1-9]/ { ttl = 3600 }
+    /ephemeral_5m_input_tokens":[1-9]/ { ttl = 300 }
     /"output_tokens":/{
       if (!match($0, /"id":"msg_[^"]*"/)) next
       id = substr($0, RSTART + 6, RLENGTH - 7)
       if (id in seen) next
       seen[id] = 1
       if (match($0, /"output_tokens":[0-9]+/)) sum += substr($0, RSTART + 16, RLENGTH - 16)
-    } END { print sum + 0, clears + 0 }' "$transcript")"
+    } END { print sum + 0, clears + 0, ttl + 0 }' "$transcript")"
   # /clear and a model switch each start a conversation the running average no
   # longer describes, but every counter here is a session total that survives
   # both — so the totals at the reset are cached and subtracted from then on.
@@ -119,6 +123,21 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   fi
   d_ms=$((api_ms - base_ms)) d_out=$((out_total - base_out))
   [ "$d_ms" -gt 0 ] && [ "$d_out" -gt 0 ] && TPS=$((d_out * 1000 / d_ms))
+  # Prompt-cache warmth: each request re-warms the cache for ttl, and the
+  # transcript's last write is that request (or its reply, seconds later).
+  # Sending anything before it hits 0 keeps the cached prefix; after, it is
+  # rebuilt at full price. Shown as m:ss because at 5m the seconds matter.
+  if [ "${ttl:-0}" -gt 0 ]; then
+    left=$((ttl - ($(date +%s) - $(file_mtime "$transcript"))))
+    if [ "$left" -le 0 ]; then CACHE="\033[31mcache cold${RESET}"
+    else
+      if [ "$left" -le $((ttl / 5)) ]; then cache_color="\033[31m"
+      elif [ "$left" -le $((ttl / 2)) ]; then cache_color="\033[33m"
+      else cache_color="\033[32m"
+      fi
+      CACHE="cache $((ttl / 60))m ${cache_color}$((left / 60)):$(printf '%02d' $((left % 60)))${RESET}"
+    fi
+  fi
 fi
 
 # fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
@@ -238,7 +257,7 @@ if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
 else AGE_TXT="$((age_s / 60))m ago"
 fi
 
-LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}"
+LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) $(pct_text "$PCT") (${USED_K}k/${MAX_K}k) | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
 
 printf "%b\n" "$LINE1"
 [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
