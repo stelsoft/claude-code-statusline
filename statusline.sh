@@ -150,12 +150,14 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   fi
 fi
 
-# fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
-# cached and refreshed in the background every 15s so the statusline never blocks.
-# ponytail: that source reads a local snapshot that can lag by hours (see above),
-# so fable trails reality. Drop this block if the JSON ever grows a per-model bucket.
-FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
-FABLE_MAX_AGE=15
+# limits (5h/7d/fable) moved to the herdr tab bar: ~/.config/herdr/claude-usage.sh.
+# The rest below stays commented, not deleted. USAGE_TS is still written for limit-watch.sh.
+# # fable is never in the JSON at all, so it is scraped from `claude -p "/usage"`,
+# # cached and refreshed in the background every 15s so the statusline never blocks.
+# # ponytail: that source reads a local snapshot that can lag by hours (see above),
+# # so fable trails reality. Drop this block if the JSON ever grows a per-model bucket.
+# FABLE_CACHE="$HOME/.claude/.statusline_fable_cache"
+# FABLE_MAX_AGE=15
 now=$(date +%s)
 
 # One age for the whole statusline plus the last known 5h reset. Deliberately not
@@ -170,84 +172,84 @@ last_pct="" last_ts="$now" last_reset=""
 # window rolls, so reuse it; JSON always wins when it does arrive.
 [ -z "$DAILY_RESET" ] && [ "${last_reset:-0}" -gt "$now" ] && DAILY_RESET=$last_reset
 
-mtime=0
-[ -f "$FABLE_CACHE" ] && mtime=$(file_mtime "$FABLE_CACHE" || echo 0)
-# The background refresh can be killed before its `rm -f` runs (session exit,
-# SIGKILL), leaving a lock that would block every future refresh forever and
-# freeze the numbers. Anything older than a minute is a corpse, not a holder.
-if [ -f "$FABLE_CACHE.lock" ]; then
-  lock_mtime=$(file_mtime "$FABLE_CACHE.lock" || echo 0)
-  [ $((now - ${lock_mtime:-0})) -gt 60 ] && rm -f "$FABLE_CACHE.lock" "$FABLE_CACHE.tmp"
-fi
-if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; then
-  (
-    touch "$FABLE_CACHE.lock"
-    claude -p "/usage" 2>/dev/null > "$FABLE_CACHE.tmp" && mv "$FABLE_CACHE.tmp" "$FABLE_CACHE"
-    rm -f "$FABLE_CACHE.lock"
-  # stdout closed too: Claude Code reads the statusline until EOF, and the child
-  # would otherwise hold that fd open for the whole `claude -p` run, stalling the
-  # frame. Nothing in here prints, so nothing is lost.
-  ) >/dev/null 2>&1 & disown 2>/dev/null
-fi
+# mtime=0
+# [ -f "$FABLE_CACHE" ] && mtime=$(file_mtime "$FABLE_CACHE" || echo 0)
+# # The background refresh can be killed before its `rm -f` runs (session exit,
+# # SIGKILL), leaving a lock that would block every future refresh forever and
+# # freeze the numbers. Anything older than a minute is a corpse, not a holder.
+# if [ -f "$FABLE_CACHE.lock" ]; then
+#   lock_mtime=$(file_mtime "$FABLE_CACHE.lock" || echo 0)
+#   [ $((now - ${lock_mtime:-0})) -gt 60 ] && rm -f "$FABLE_CACHE.lock" "$FABLE_CACHE.tmp"
+# fi
+# if [ $((now - mtime)) -gt "$FABLE_MAX_AGE" ] && [ ! -f "$FABLE_CACHE.lock" ]; then
+#   (
+#     touch "$FABLE_CACHE.lock"
+#     claude -p "/usage" 2>/dev/null > "$FABLE_CACHE.tmp" && mv "$FABLE_CACHE.tmp" "$FABLE_CACHE"
+#     rm -f "$FABLE_CACHE.lock"
+#   # stdout closed too: Claude Code reads the statusline until EOF, and the child
+#   # would otherwise hold that fd open for the whole `claude -p` run, stalling the
+#   # frame. Nothing in here prints, so nothing is lost.
+#   ) >/dev/null 2>&1 & disown 2>/dev/null
+# fi
 
-if [ -f "$FABLE_CACHE" ]; then
-  # Regexes held in vars: a literal ( inside [[ =~ ]] confuses the [[ tokenizer.
-  re_daily='Current session: ([0-9]+)'
-  re_reset='resets ([^(]*)'
-  re_week='Current week \(all models\): ([0-9]+)'
-  re_fable='Current week \(Fable\): ([0-9]+)'
-  while IFS= read -r line; do
-    # Only fill what the JSON left empty (brand-new session, no API response yet).
-    # Never overwrite a JSON value — the scrape is the lower-quality source.
-    if [[ $line =~ $re_daily ]]; then
-      DAILY=${DAILY:-${BASH_REMATCH[1]}}
-      if [ -z "$DAILY_RESET" ] && [[ $line =~ $re_reset ]]; then
-        DAILY_RESET_TXT=${BASH_REMATCH[1]//,/}   # "Jul 25, 3pm" — the comma alone makes date -d reject it
-        DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
-        # ponytail: reset-text to epoch is GNU-only (date -d free text); BSD date
-        # cannot parse it. Only fires for a new session before the JSON rate_limits
-        # arrive, so on macOS the 5h bar shows and the reset text waits for JSON.
-        [ "$DATE_GNU" = 1 ] && [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
-      fi
-    fi
-    [[ $line =~ $re_week ]] && WEEKLY=${WEEKLY:-${BASH_REMATCH[1]}}
-    [[ $line =~ $re_fable ]] && FABLE=${BASH_REMATCH[1]}
-  done < "$FABLE_CACHE"
-fi
+# if [ -f "$FABLE_CACHE" ]; then
+#   # Regexes held in vars: a literal ( inside [[ =~ ]] confuses the [[ tokenizer.
+#   re_daily='Current session: ([0-9]+)'
+#   re_reset='resets ([^(]*)'
+#   re_week='Current week \(all models\): ([0-9]+)'
+#   re_fable='Current week \(Fable\): ([0-9]+)'
+#   while IFS= read -r line; do
+#     # Only fill what the JSON left empty (brand-new session, no API response yet).
+#     # Never overwrite a JSON value — the scrape is the lower-quality source.
+#     if [[ $line =~ $re_daily ]]; then
+#       DAILY=${DAILY:-${BASH_REMATCH[1]}}
+#       if [ -z "$DAILY_RESET" ] && [[ $line =~ $re_reset ]]; then
+#         DAILY_RESET_TXT=${BASH_REMATCH[1]//,/}   # "Jul 25, 3pm" — the comma alone makes date -d reject it
+#         DAILY_RESET_TXT=${DAILY_RESET_TXT%"${DAILY_RESET_TXT##*[![:space:]]}"}  # rtrim
+#         # ponytail: reset-text to epoch is GNU-only (date -d free text); BSD date
+#         # cannot parse it. Only fires for a new session before the JSON rate_limits
+#         # arrive, so on macOS the 5h bar shows and the reset text waits for JSON.
+#         [ "$DATE_GNU" = 1 ] && [ -n "$DAILY_RESET_TXT" ] && DAILY_RESET=$(date -d "$DAILY_RESET_TXT" +%s 2>/dev/null)
+#       fi
+#     fi
+#     [[ $line =~ $re_week ]] && WEEKLY=${WEEKLY:-${BASH_REMATCH[1]}}
+#     [[ $line =~ $re_fable ]] && FABLE=${BASH_REMATCH[1]}
+#   done < "$FABLE_CACHE"
+# fi
 
-LINE2=""
-if [ -n "$DAILY" ]; then
-  LINE2="${LINE2}5h $(make_bar "$DAILY" 4) $(pct_text "$DAILY")"
-  if [ -n "$DAILY_RESET" ]; then
-    now_s=$(date +%s)
-    diff_s=$((DAILY_RESET - now_s))
-    if [ "$diff_s" -lt 0 ]; then
-      LINE2="${LINE2} (resets now)"
-    else
-      dh=$((diff_s / 3600))
-      dm=$(((diff_s % 3600) / 60))
-      if [ "$diff_s" -le 3600 ]; then reset_color="\033[31m"
-      elif [ "$diff_s" -le 7200 ]; then reset_color="\033[33m"
-      else reset_color="\033[32m"
-      fi
-      reset_hhmm=$(epoch_hhmm "$DAILY_RESET")
-      if [ "$dh" -gt 0 ]; then
-        reset_txt="resets in ${dh}h$(printf '%02d' "$dm")m (${reset_hhmm})"
-      else
-        reset_txt="resets in ${dm}m (${reset_hhmm})"
-      fi
-      LINE2="${LINE2} (${reset_color}${reset_txt}${RESET})"
-    fi
-  fi
-fi
-[ -n "$WEEKLY" ] && LINE2="${LINE2}${LINE2:+ | }7d $(make_bar "$WEEKLY" 4) $(pct_text "$WEEKLY")"
-# Hidden at 0 rather than shown as 0%. The scrape is the only source for fable
-# (no per-model bucket in the JSON, no local file has percentages), and headless
-# /usage currently returns ~0 for every percentage while printing correct reset
-# times — so 0 here means "source broken", not "no fable usage". The bar comes
-# back on its own if that source starts reporting again.
-[ -n "$FABLE" ] && [ "$FABLE" -gt 0 ] &&
-  LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
+# LINE2=""
+# if [ -n "$DAILY" ]; then
+#   LINE2="${LINE2}5h $(make_bar "$DAILY" 4) $(pct_text "$DAILY")"
+#   if [ -n "$DAILY_RESET" ]; then
+#     now_s=$(date +%s)
+#     diff_s=$((DAILY_RESET - now_s))
+#     if [ "$diff_s" -lt 0 ]; then
+#       LINE2="${LINE2} (resets now)"
+#     else
+#       dh=$((diff_s / 3600))
+#       dm=$(((diff_s % 3600) / 60))
+#       if [ "$diff_s" -le 3600 ]; then reset_color="\033[31m"
+#       elif [ "$diff_s" -le 7200 ]; then reset_color="\033[33m"
+#       else reset_color="\033[32m"
+#       fi
+#       reset_hhmm=$(epoch_hhmm "$DAILY_RESET")
+#       if [ "$dh" -gt 0 ]; then
+#         reset_txt="resets in ${dh}h$(printf '%02d' "$dm")m (${reset_hhmm})"
+#       else
+#         reset_txt="resets in ${dm}m (${reset_hhmm})"
+#       fi
+#       LINE2="${LINE2} (${reset_color}${reset_txt}${RESET})"
+#     fi
+#   fi
+# fi
+# [ -n "$WEEKLY" ] && LINE2="${LINE2}${LINE2:+ | }7d $(make_bar "$WEEKLY" 4) $(pct_text "$WEEKLY")"
+# # Hidden at 0 rather than shown as 0%. The scrape is the only source for fable
+# # (no per-model bucket in the JSON, no local file has percentages), and headless
+# # /usage currently returns ~0 for every percentage while printing correct reset
+# # times — so 0 here means "source broken", not "no fable usage". The bar comes
+# # back on its own if that source starts reporting again.
+# [ -n "$FABLE" ] && [ "$FABLE" -gt 0 ] &&
+#   LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
 
 # Only the percentage moving means new usage, so only that resets the age. The
 # reset epoch rides along in the same file and is written whenever it is learned.
@@ -270,5 +272,5 @@ fi
 LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) ${CTX_COLOR}${PCT}% ${USED_K}k${RESET} | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
 
 printf "%b\n" "$LINE1"
-[ -n "$LINE2" ] && printf "%b\n" "$LINE2"
+# [ -n "$LINE2" ] && printf "%b\n" "$LINE2"
 exit 0

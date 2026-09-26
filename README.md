@@ -3,12 +3,9 @@
 A statusline for [Claude Code](https://claude.com/claude-code).
 
 - Context-window bar with token count
-- 5h / 7d rate-limit bars with reset countdown, straight from Claude Code's own
-  rate-limit data — same numbers `/usage` shows. The countdown shows on the first
-  frame of a new session, before that data arrives, by reusing the last known
-  reset time
-- Fable weekly bar, scraped from `/usage` in the background (nothing else carries
-  it); hidden when that snapshot reports 0
+- 5h / 7d / Fable limits live in the [herdr](https://herdr.dev) tab bar instead
+  (`herdr/`): one line for the whole account, refreshed every 5s from `/usage`.
+  The statusline blocks that drew them are commented out, not deleted
 - Average output speed in tokens/sec, next to the model name — session output
   tokens over the time the API spent generating them; blank until the first API
   call finishes, and starts over after `/clear` or a model switch
@@ -43,3 +40,12 @@ Then add to `~/.claude/settings.json`:
   }
 }
 ```
+
+### herdr tab bar
+
+```sh
+cp herdr/claude-usage.sh ~/.config/herdr/ && chmod +x ~/.config/herdr/claude-usage.sh
+```
+
+Merge `herdr/config.toml` into `~/.config/herdr/config.toml`, then
+`herdr server reload-config`.

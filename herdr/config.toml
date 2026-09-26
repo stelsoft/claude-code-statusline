@@ -1,0 +1,5 @@
+[ui]
+tab_bar_position = "bottom"
+tab_bar_right = [
+  { type = "command", command = "~/.config/herdr/claude-usage.sh", interval_seconds = 5, timeout_seconds = 2 },
+]
