@@ -2,7 +2,7 @@
 # Claude limits for the herdr tab bar. Self-contained: scrapes `claude -p /usage`
 # in the background (takes ~4s, herdr timeout is 2s) and prints the last cache.
 CACHE="$HOME/.config/herdr/.claude-usage-cache"
-MAX_AGE=5   # scrape ~every 10s with herdr interval 5s: shown data at most ~10s old
+MAX_AGE=10  # scrape ~every 15s with herdr interval 5s: shown data at most ~15s old
 now=$(date +%s)
 mtime=$(stat -c %Y "$CACHE" 2>/dev/null || echo 0)
 lock_mtime=$(stat -c %Y "$CACHE.lock" 2>/dev/null || echo 0)
