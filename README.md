@@ -4,7 +4,7 @@ A statusline for [Claude Code](https://claude.com/claude-code).
 
 - Context-window bar with token count
 - 5h / 7d / Fable limits live in the [herdr](https://herdr.dev) tab bar instead
-  (`herdr/`): one line for the whole account, refreshed every 5s from `/usage`.
+  (`herdr/`): one line for the whole account, refreshed every ~10s from `/usage`.
   The statusline blocks that drew them are commented out, not deleted
 - Average output speed in tokens/sec, next to the model name — session output
   tokens over the time the API spent generating them; blank until the first API
