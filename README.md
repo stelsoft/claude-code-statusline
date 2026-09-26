@@ -44,7 +44,7 @@ Then add to `~/.claude/settings.json`:
 ### herdr tab bar
 
 ```sh
-cp herdr/claude-usage.sh ~/.config/herdr/ && chmod +x ~/.config/herdr/claude-usage.sh
+cp herdr/claude-usage.sh herdr/sysload.sh ~/.config/herdr/ && chmod +x ~/.config/herdr/*.sh
 ```
 
 Merge `herdr/config.toml` into `~/.config/herdr/config.toml`, then
