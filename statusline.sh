@@ -276,7 +276,7 @@ if [ "$age_s" -lt 60 ]; then AGE_TXT="${age_s}s ago"
 else AGE_TXT="$((age_s / 60))m ago"
 fi
 
-LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) ${CTX_COLOR}${PCT}% ${USED_K}k${RESET} | updated ${AGE_TXT}${CACHE:+ | $CACHE}"
+LINE1="[$MODEL${EFFORT:+ $EFFORT}${TPS:+ ${TPS}tps}] ${DIR##*/} $(make_bar "$PCT" 4) ${CTX_COLOR}${PCT}% ${USED_K}k${RESET}${CACHE:+ | $CACHE} | ${AGE_TXT} (updated)"
 
 printf "%b\n" "$LINE1"
 # [ -n "$LINE2" ] && printf "%b\n" "$LINE2"

@@ -9,7 +9,7 @@ A statusline for [Claude Code](https://claude.com/claude-code).
 - Average output speed in tokens/sec, next to the model name — session output
   tokens, subagents included, over the time the API spent generating them; blank until the first API
   call finishes, and starts over after `/clear`, a compact, or a model switch
-- `updated Xs ago` — when the 5h figure last actually moved
+- `Xs ago (updated)` — when the 5h figure last actually moved
 - Runs on Linux, macOS, and Windows (Git Bash or WSL) — just `bash`
 
 ![screenshot](screenshot.png)
