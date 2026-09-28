@@ -91,7 +91,8 @@ api_ms=$(jnum "$input" total_api_duration_ms)
 transcript=$(jstr "$input" transcript_path)
 transcript=${transcript//\\\\/\/}   # Git Bash: JSON carries C:\\Users\\... escaped
 if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
-  # clears counts only real /clear invocations: the marker is the whole user
+  # clears counts real /clear invocations and compacts (manual or auto, both
+  # leave a compact_boundary line): the /clear marker is the whole user
   # message, so anchoring at "content":" keeps a chat *about* /clear from counting.
   # ttl: every response names the cache bucket it wrote to; the last nonzero one
   # is the TTL in force (5m after usage overage, 1h otherwise).
@@ -101,9 +102,15 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
   # last response's whole duration. A compact or /clear replaces the whole
   # prefix, so nothing cached is worth keeping warm until the next request:
   # sent is dropped there, and the compact summary line is not a request.
-  read -r out_total clears ttl sent <<< "$(awk '
+  # Subagents and workflow agents write their own transcripts under
+  # <session>/subagents/, but their API time lands in the same total_api_duration_ms
+  # — so their output tokens must be summed too or a fan-out sinks the average.
+  # Only their usage lines count: a subagent's own compact or user turns are not
+  # a reset or a request of this conversation.
+  read -r out_total clears ttl sent <<< "$(find "$transcript" "${transcript%.jsonl}" -name '*.jsonl' -exec awk -v main="$transcript" '
+    FILENAME != main && !/"output_tokens":/ { next }
     index($0, "\"content\":\"<command-name>/clear<") { clears++; sent = "" }
-    /"subtype":"compact_boundary"/ { sent = "" }
+    /"subtype":"compact_boundary"/ { clears++; sent = "" }
     /"type":"user"/ && !/"isCompactSummary":true/ && !/"content":"<(local-command|command-name)/ && match($0, /"timestamp":"[^"]*"/) { sent = substr($0, RSTART + 13, RLENGTH - 14) }
     /ephemeral_1h_input_tokens":[1-9]/ { ttl = 3600 }
     /ephemeral_5m_input_tokens":[1-9]/ { ttl = 300 }
@@ -113,8 +120,8 @@ if [ "${api_ms:-0}" -gt 0 ] && [ -s "$transcript" ]; then
       if (id in seen) next
       seen[id] = 1
       if (match($0, /"output_tokens":[0-9]+/)) sum += substr($0, RSTART + 16, RLENGTH - 16)
-    } END { print sum + 0, clears + 0, ttl + 0, sent }' "$transcript")"
-  # /clear and a model switch each start a conversation the running average no
+    } END { print sum + 0, clears + 0, ttl + 0, sent }' {} + 2>/dev/null)"
+  # /clear, a compact and a model switch each start a conversation the running average no
   # longer describes, but every counter here is a session total that survives
   # both — so the totals at the reset are cached and subtracted from then on.
   # Keyed by session id: concurrent sessions would otherwise reset each other.

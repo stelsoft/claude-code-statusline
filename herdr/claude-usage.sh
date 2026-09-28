@@ -39,7 +39,10 @@ d=${BASH_REMATCH[1]} rtxt=${BASH_REMATCH[2]//,/}
 out="$(dot "$d") 5h $(bar "$d") $d%"
 reset=$(date -d "$rtxt" +%s 2>/dev/null)
 s=$(( ${reset:-0} - now ))
-[ "$s" -gt 0 ] && out+=" ($(rdot "$s") resets in $((s/3600))h$(printf %02d $((s%3600/60)))m ($(date -d "@$reset" +%H:%M)))"
+if [ "$s" -gt 0 ]; then
+  [ "$s" -ge 3600 ] && left="$((s/3600))h$(printf %02d $((s%3600/60)))m" || left="$((s/60))m"
+  out+=" ($(rdot "$s") resets in $left ($(date -d "@$reset" +%H:%M)))"
+fi
 [ -n "$w" ] && out+=" | $(dot "$w") 7d $(bar "$w") $w%"
 [ -n "$f" ] && out+=" | $(dot "$f") fable $(bar "$f") $f%"
 echo "$out"
