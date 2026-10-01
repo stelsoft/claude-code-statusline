@@ -28,16 +28,19 @@ rdot() { if [ "$1" -le 3600 ]; then printf '🔴'; elif [ "$1" -le 7200 ]; then 
 
 c=$(cat "$CACHE" 2>/dev/null) || exit 0
 # Regexes in vars: a literal ( inside [[ =~ ]] confuses the [[ tokenizer.
-re_day='Current session: ([0-9]+)% used · resets ([^(]*)'
+re_day='Current session: ([0-9]+)% used( · resets ([^(]*))?'
 re_week='Current week \(all models\): ([0-9]+)'
 re_fable='Current week \(Fable\): ([0-9]+)'
-[[ $c =~ $re_day ]] || exit 0
-d=${BASH_REMATCH[1]} rtxt=${BASH_REMATCH[2]//,/}
+[[ $c == *"% used"* ]] || exit 0
+# After the 5h limit resets, until the next message opens a new window, /usage
+# drops the session line (or its "resets" part): that is 0% with no countdown.
+d=0 rtxt=""
+[[ $c =~ $re_day ]] && d=${BASH_REMATCH[1]} rtxt=${BASH_REMATCH[3]//,/}
 [[ $c =~ $re_week ]] && w=${BASH_REMATCH[1]}
 [[ $c =~ $re_fable ]] && f=${BASH_REMATCH[1]}
 
 out="$(dot "$d") 5h $(bar "$d") $d%"
-reset=$(date -d "$rtxt" +%s 2>/dev/null)
+reset=$([ -n "$rtxt" ] && date -d "$rtxt" +%s 2>/dev/null)
 s=$(( ${reset:-0} - now ))
 if [ "$s" -gt 0 ]; then
   [ "$s" -ge 3600 ] && left="$((s/3600))h$(printf %02d $((s%3600/60)))m" || left="$((s/60))m"
