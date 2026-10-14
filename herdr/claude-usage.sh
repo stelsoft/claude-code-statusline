@@ -38,9 +38,17 @@ d=0 rtxt=""
 [[ $c =~ $re_day ]] && d=${BASH_REMATCH[1]} rtxt=${BASH_REMATCH[3]//,/}
 [[ $c =~ $re_week ]] && w=${BASH_REMATCH[1]}
 [[ $c =~ $re_fable ]] && f=${BASH_REMATCH[1]}
+reset=$([ -n "$rtxt" ] && date -d "$rtxt" +%s 2>/dev/null)
+# The headless scrape lags the real 5h number badly (52% vs 75%). statusline.sh
+# writes the true one from rate-limit headers: "<pct> <ts> <resets_at>". Prefer it
+# while a Claude UI rendered it in the last 10 min and its window is still open.
+UTS="$HOME/.claude/.statusline_usage_ts"
+if read -r up _ ur < "$UTS" 2>/dev/null && [ $((now - $(stat -c %Y "$UTS"))) -le 600 ] \
+   && [ "${ur:-0}" -gt "$now" ]; then
+  d=${up%.*} reset=$ur
+fi
 
 out="$(dot "$d") 5h $(bar "$d") $d%"
-reset=$([ -n "$rtxt" ] && date -d "$rtxt" +%s 2>/dev/null)
 s=$(( ${reset:-0} - now ))
 if [ "$s" -gt 0 ]; then
   [ "$s" -ge 3600 ] && left="$((s/3600))h$(printf %02d $((s%3600/60)))m" || left="$((s/60))m"
