@@ -50,7 +50,9 @@ if [ "$s" -gt 0 ]; then
   el=$((18000 - s))
   if [ "$el" -ge 300 ] && [ "$d" -gt 0 ]; then
     p=$((d * 18000 / el))
-    if [ "$p" -ge 100 ]; then out+=" → 🔴 100% @$(date -d "@$((now - el + 100 * el / d))" +%H:%M)"
+    t=$((el * (100 - d) / d))
+    [ "$t" -ge 3600 ] && hit="$((t/3600))h$(printf %02d $((t%3600/60)))m" || hit="$((t/60))m"
+    if [ "$p" -ge 100 ]; then out+=" → 🔴 100% in$hit"
     else out+=" → $(dot "$p") $p%"
     fi
   fi
