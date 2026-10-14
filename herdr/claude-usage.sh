@@ -45,6 +45,15 @@ s=$(( ${reset:-0} - now ))
 if [ "$s" -gt 0 ]; then
   [ "$s" -ge 3600 ] && left="$((s/3600))h$(printf %02d $((s%3600/60)))m" || left="$((s/60))m"
   out+=" ($(rdot "$s") resets in $left ($(date -d "@$reset" +%H:%M)))"
+  # Forecast: the window's average burn so far (pct / elapsed), run to the reset.
+  # Under 5 min in, a single message swings it wildly, so it waits.
+  el=$((18000 - s))
+  if [ "$el" -ge 300 ] && [ "$d" -gt 0 ]; then
+    p=$((d * 18000 / el))
+    if [ "$p" -ge 100 ]; then out+=" → 🔴 100% @$(date -d "@$((now - el + 100 * el / d))" +%H:%M)"
+    else out+=" → $(dot "$p") $p%"
+    fi
+  fi
 fi
 [ -n "$w" ] && out+=" | $(dot "$w") 7d $(bar "$w") $w%"
 [ -n "$f" ] && out+=" | $(dot "$f") fable $(bar "$f") $f%"
