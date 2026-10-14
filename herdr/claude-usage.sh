@@ -52,7 +52,7 @@ out="$(dot "$d") 5h $(bar "$d") $d%"
 s=$(( ${reset:-0} - now ))
 if [ "$s" -gt 0 ]; then
   [ "$s" -ge 3600 ] && left="$((s/3600))h$(printf %02d $((s%3600/60)))m" || left="$((s/60))m"
-  out+=" ($(rdot "$s") resets in $left ($(date -d "@$reset" +%H:%M)))"
+  out+=" $(rdot "$s") $left $(date -d "@$reset" +%H:%M)"
   # Forecast: the window's average burn so far (pct / elapsed), run to the reset.
   # Under 5 min in, a single message swings it wildly, so it waits.
   el=$((18000 - s))
