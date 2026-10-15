@@ -258,6 +258,14 @@ last_pct="" last_ts="$now" last_reset=""
 # [ -n "$FABLE" ] && [ "$FABLE" -gt 0 ] &&
 #   LINE2="${LINE2}${LINE2:+ | }fable $(make_bar "$FABLE" 4) $(pct_text "$FABLE")"
 
+# Several sessions write this file. An idle one re-rendering with its old headers
+# must not drag the shared number down: within a window usage only grows, so the
+# same window keeps the higher percentage and an older window is ignored outright.
+if [ -n "$DAILY" ] && [ -n "$DAILY_RESET" ] && [ "$DAILY_RESET" -lt "${last_reset:-0}" ]; then
+  DAILY=$last_pct DAILY_RESET=$last_reset
+elif [ -n "$DAILY" ] && [ "${DAILY_RESET:-0}" -eq "${last_reset:-0}" ] && [ "$DAILY" -lt "${last_pct:-0}" ]; then
+  DAILY=$last_pct
+fi
 # Only the percentage moving means new usage, so only that resets the age. The
 # reset epoch rides along in the same file and is written whenever it is learned.
 if [ "${DAILY:-}" != "$last_pct" ]; then last_ts="$now"; fi
