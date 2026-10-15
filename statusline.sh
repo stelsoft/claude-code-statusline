@@ -268,8 +268,9 @@ elif [ -n "$DAILY" ] && [ "${DAILY_RESET:-0}" -eq "${last_reset:-0}" ] && [ "$DA
 fi
 # Only the percentage moving means new usage, so only that resets the age. The
 # reset epoch rides along in the same file and is written whenever it is learned.
-if [ "${DAILY:-}" != "$last_pct" ]; then last_ts="$now"; fi
-if [ "${DAILY:-}" != "$last_pct" ] || [ "${DAILY_RESET:-}" != "$last_reset" ]; then
+if [ -n "$DAILY" ] && [ "$DAILY" != "$last_pct" ]; then last_ts="$now"; fi
+if [ -z "$DAILY" ]; then :  # no headers this render (fresh session): leave the shared file alone
+elif [ "$DAILY" != "$last_pct" ] || [ "${DAILY_RESET:-}" != "$last_reset" ]; then
   # tmp+mv: limit-watch reads this file between renders; a direct > could hand it
   # a half-written line.
   printf '%s %s %s\n' "${DAILY:-}" "$last_ts" "${DAILY_RESET:-$last_reset}" > "$USAGE_TS.tmp" &&
