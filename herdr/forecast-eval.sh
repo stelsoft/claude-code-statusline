@@ -3,6 +3,7 @@
 # Prints per-window mean/max abs error and overall, skipping the still-open window.
 LOG="${1:-$HOME/.config/herdr/.claude-usage-cache.log}"
 awk -v now="$(date +%s)" '
+{ $2 = int(($2 + 150) / 300) * 300 }   # scrape rounds the reset to the minute; merge
 $4 != "" { n[$2]++; pred[$2, n[$2]] = ($4 > 100 ? 100 : $4); ts[$2, n[$2]] = $1 }
 { last[$2] = $3; seen[$2] = 1 }
 END {
