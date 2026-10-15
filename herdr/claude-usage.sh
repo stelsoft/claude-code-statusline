@@ -73,6 +73,7 @@ if [ "$s" -gt 0 ]; then
   if [ -n "$t0" ] && [ $((now - t0)) -ge 300 ]; then el=$((now - t0)) dp=$((d - p0))
   else el=$((18000 - s)) dp=$d                           # too few samples: window average
   fi
+  p=""
   if [ "$el" -ge 300 ] && [ "$dp" -gt 0 ]; then
     p=$((d + dp * s / el))
     t=$((el * (100 - d) / dp))
@@ -81,6 +82,9 @@ if [ "$s" -gt 0 ]; then
     else out+=" → $(pdot "$p") $p%"
     fi
   fi
+  # Append-only stats: "<ts> <reset> <pct> <predicted>" per change, to check
+  # forecasts against the last pct of each window.
+  [ "$lp" != "$d" ] && echo "$now $reset $d $p" >> "$CACHE.log"
 fi
 [ -n "$w" ] && out+=" | $(dot "$w") 7d $(bar "$w") $w%"
 [ -n "$f" ] && out+=" | $(dot "$f") fable $(bar "$f") $f%"
