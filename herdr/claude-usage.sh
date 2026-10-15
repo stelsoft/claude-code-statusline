@@ -24,7 +24,7 @@ bar() { local h=$(( ($1*8+99)/100 )) b="" p; [ "$h" -gt 8 ] && h=8; [ "$h" -eq 8
 # Same thresholds as ~/.claude/statusline.sh: percent 80 red / 50 yellow / else plain,
 # reset countdown 1h red / 2h yellow / else green.
 dot() { if [ "$1" -ge 80 ]; then printf '🔴'; elif [ "$1" -ge 50 ]; then printf '🟡'; else printf '⚫'; fi; }
-pdot() { if [ "$1" -ge 100 ]; then printf '🔴'; elif [ "$1" -ge 95 ]; then printf '🟠'; elif [ "$1" -ge 90 ]; then printf '🟢'; else printf '⚫'; fi; }
+pdot() { if [ "$1" -ge 100 ]; then printf '🔴'; elif [ "$1" -ge 95 ]; then printf '🟡'; elif [ "$1" -ge 90 ]; then printf '🟢'; else printf '⚫'; fi; }
 rdot() { if [ "$1" -le 3600 ]; then printf '🔴'; elif [ "$1" -le 7200 ]; then printf '🟡'; else printf '🟢'; fi; }
 
 c=$(cat "$CACHE" 2>/dev/null) || exit 0
