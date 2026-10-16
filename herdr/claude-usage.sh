@@ -94,6 +94,9 @@ if [ -n "$w" ]; then
   if [ "$ws" -gt 0 ] && [ "$we" -ge 3600 ] && [ "$w" -gt 0 ]; then
     wp=$((w + w * ws / we)); out+=" → $(pdot "$wp") $wp%"
   fi
+  # Same stats line as the 5h log; score with: herdr/forecast-eval.sh ~/.config/herdr/.claude-usage-cache.log7
+  read -r _ _ lw _ < <(tail -n1 "$CACHE.log7" 2>/dev/null)
+  [ "$lw" != "$w" ] && echo "$now ${wreset:-0} $w $wp" >> "$CACHE.log7"
 fi
 [ -n "$f" ] && out+=" | $(dot "$f") fable $(bar "$f") $f%"
 echo "$out"
