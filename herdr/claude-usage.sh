@@ -30,14 +30,14 @@ rdot() { if [ "$1" -le 3600 ]; then printf '🔴'; elif [ "$1" -le 7200 ]; then 
 c=$(cat "$CACHE" 2>/dev/null) || exit 0
 # Regexes in vars: a literal ( inside [[ =~ ]] confuses the [[ tokenizer.
 re_day='Current session: ([0-9]+)% used( · resets ([^(]*))?'
-re_week='Current week \(all models\): ([0-9]+)'
+re_week='Current week \(all models\): ([0-9]+)% used( · resets ([^(]*))?'
 re_fable='Current week \(Fable\): ([0-9]+)'
 [[ $c == *"% used"* ]] || exit 0
 # After the 5h limit resets, until the next message opens a new window, /usage
 # drops the session line (or its "resets" part): that is 0% with no countdown.
 d=0 rtxt=""
 [[ $c =~ $re_day ]] && d=${BASH_REMATCH[1]} rtxt=${BASH_REMATCH[3]//,/}
-[[ $c =~ $re_week ]] && w=${BASH_REMATCH[1]}
+[[ $c =~ $re_week ]] && w=${BASH_REMATCH[1]} wreset=$(date -d "${BASH_REMATCH[3]//,/}" +%s 2>/dev/null)
 [[ $c =~ $re_fable ]] && f=${BASH_REMATCH[1]}
 reset=$([ -n "$rtxt" ] && date -d "$rtxt" +%s 2>/dev/null)
 # The headless scrape lags the real 5h number badly (52% vs 75%). statusline.sh
@@ -87,6 +87,13 @@ if [ "$s" -gt 0 ]; then
   # forecasts against the last pct of each window.
   [ "$lp" != "$d" ] && echo "$now $reset $d $p" >> "$CACHE.log"
 fi
-[ -n "$w" ] && out+=" | $(dot "$w") 7d $(bar "$w") $w%"
+if [ -n "$w" ]; then
+  out+=" | $(dot "$w") 7d $(bar "$w") $w%"
+  # 7d moves slowly, so the whole-window average is a fair forecast.
+  ws=$(( ${wreset:-0} - now )) we=$((604800 - ws))
+  if [ "$ws" -gt 0 ] && [ "$we" -ge 3600 ] && [ "$w" -gt 0 ]; then
+    wp=$((w + w * ws / we)); out+=" → $(pdot "$wp") $wp%"
+  fi
+fi
 [ -n "$f" ] && out+=" | $(dot "$f") fable $(bar "$f") $f%"
 echo "$out"
