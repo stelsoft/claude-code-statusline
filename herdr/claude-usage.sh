@@ -71,7 +71,8 @@ if [ "$s" -gt 0 ]; then
   [ "$lp" != "$d" ] && keep+="$now $d"$'\n'
   printf '%s' "$keep" > "$HIST"
   if [ -n "$t0" ] && [ $((now - t0)) -ge 300 ]; then el=$((now - t0)) dp=$((d - p0))
-  else el=$((18000 - s)) dp=$d                           # too few samples: window average
+  elif [ -z "$t0" ] || [ "$p0" -gt 0 ]; then el=$((18000 - s)) dp=$d  # too few samples: window average
+  else el=0 dp=0                                         # burn just started from 0%: average over idle hours would read ~1%
   fi
   p=""
   if [ "$el" -ge 300 ] && [ "$dp" -gt 0 ]; then
