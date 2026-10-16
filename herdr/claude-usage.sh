@@ -45,7 +45,7 @@ reset=$([ -n "$rtxt" ] && date -d "$rtxt" +%s 2>/dev/null)
 # window usage only grows, so both are lower bounds and the higher one is nearer
 # the truth; after a roll the scrape can sit on the old window for minutes.
 UTS="$HOME/.claude/.statusline_usage_ts"
-if read -r up _ ur < "$UTS" 2>/dev/null && [ "${ur:-0}" -gt "$now" ]; then
+if read -r up _ ur 2>/dev/null < "$UTS" && [ "${ur:-0}" -gt "$now" ]; then
   up=${up%.*} gap=$((ur - ${reset:-0}))
   if [ "$gap" -gt 3600 ]; then d=$up reset=$ur           # scrape still on the rolled window
   elif [ "${gap#-}" -le 3600 ]; then                     # same window (scrape rounds the minute)
@@ -61,16 +61,17 @@ if [ "$s" -gt 0 ]; then
   out+=" $(rdot "$s") $left $(date -d "@$reset" +%H:%M)"
   # Forecast from the last 30 min of samples: pct moves in steps as workflows
   # start and stop, so the whole-window average lags the current burn. Samples
-  # live in "<ts> <pct>" lines; older ones and the previous window are dropped.
-  HIST="$CACHE.hist" keep="" t0="" p0="" lp=""
+  # live in "<ts> <pct>" lines for the current window; the rate uses the last 30 min.
+  HIST="$CACHE.hist" keep="" t0="" p0="" lp="" seen=""
   while read -r ts pct; do
-    [ "$ts" -ge $((now - 1800)) ] && [ "$ts" -ge $((reset - 18000)) ] || continue
-    [ -z "$t0" ] && t0=$ts p0=$pct
-    keep+="$ts $pct"$'\n' lp=$pct
+    [ "$ts" -ge $((reset - 18000)) ] || continue             # previous window
+    keep+="$ts $pct"$'\n' lp=$pct seen=1
+    [ -z "$t0" ] && [ "$ts" -ge $((now - 1800)) ] && t0=$ts p0=$pct
   done < "$HIST" 2>/dev/null
   [ "$lp" != "$d" ] && keep+="$now $d"$'\n'
   printf '%s' "$keep" > "$HIST"
   if [ -n "$t0" ] && [ $((now - t0)) -ge 300 ]; then el=$((now - t0)) dp=$((d - p0))
+  elif [ -z "$t0" ] && [ -n "$seen" ]; then el=0 dp=0  # samples in this window but none in 30 min: burn stopped
   elif [ -z "$t0" ] || [ "$p0" -gt 0 ]; then el=$((18000 - s)) dp=$d  # too few samples: window average
   else el=0 dp=0                                         # burn just started from 0%: average over idle hours would read ~1%
   fi
